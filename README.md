@@ -115,3 +115,45 @@ you can confirm the harness is not lying to you.
 - Use whatever tools you would use on the job.
 - `optional/swe-bench-verified/` is read-only stretch from SWE-bench Verified. It is
   not Part 1 or Part 2. Ignore it unless you finish early.
+
+---
+
+# Task validator (built for the challenge)
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt anthropic
+.venv/bin/python validate.py tasks              # Parts 1-2, all code checks (~4 min)
+.venv/bin/python validate.py tasks --llm        # + LLM checks via OpenRouter (OPENROUTER_API_KEY)
+.venv/bin/python fixtures/check_fixtures.py     # proves each check works on planted defects
+```
+
+Results: `results/<name>/report.html` (click a cell → reason, fix, evidence) and per task/check folders with
+the exact action, full stdout/stderr and score of every run. Write-up: `results/REPORT.md`.
+
+| File | What it does |
+|---|---|
+| `validate.py` | runs the checks per task (in parallel), the skip rule, duplicates, the tasks/ integrity hash |
+| `validator/checks.py` | one `check_<name>()` per check, each with a WHAT/WHY/HOW/STATUS docstring |
+| `validator/probes.py` | the constructed submissions: stubs, ast mutants, cheats |
+| `validator/direct.py` | direct pytest runs (one test alone, reversed order, TZ) the harness can't express |
+| `validator/evidence.py`, `report.py` | the evidence trail and report.html |
+| `validator/llm.py` | OpenRouter call (Claude Sonnet), rate-limited |
+
+## Mistakes caught (every time the validator itself was wrong)
+
+1. **Flaky false positive on 18/20 tasks.** pytest prints failing test ids with the harness's random temp dir,
+   so identical failures looked different. Fixed: compare only `file.py::test`.
+2. **Leak check hid the t07 leak.** It subtracted every starter line from the solution's lines, and `NOTES.md`
+   *is* a starter file, so the leaked lines were subtracted away. Fixed: subtract only the original lines of
+   the file being changed.
+3. **Mutation false positives.** Text-based mutants deleted docstring lines, a trailing `return None`, and dead
+   initializations (`length = 0` that the loop always overwrites first). Rebuilt with `ast`: statements and
+   comparisons only, never docstrings/comments; no trailing `return None`, no literal initializations; drop any
+   mutant whose ast (ignoring docstrings) equals the original's.
+4. **Integrity alarm from macOS.** Finder wrote `.DS_Store` files into tasks/; the hash now ignores OS metadata
+   (git confirmed no task file changed).
+5. **LLM rate limit.** 6 parallel tasks exceeded OpenRouter's 20 requests/min for new accounts (429s, correctly
+   reported as ERROR, not blamed on tasks). Fixed: calls spaced 3.2 s apart, 429 retried after a pause.
+6. **Severity call:** a `required_output_files` mismatch was FAIL; it's a metadata error, so now WARN.
+7. **A fixture expectation of mine** assumed the random test would fail the oracle; it passed 3/3 by chance
+   (1 in 8). The flaky check still caught it; the fixture now allows either oracle result.
