@@ -4,3 +4,4 @@ results/*
 !results/REPORT.md
 *.pyc
 fixtures/generated/
+.DS_Store
