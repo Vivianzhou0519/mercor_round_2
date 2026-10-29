@@ -1,0 +1,26 @@
+schema_version = "1.4"
+
+[task]
+name = "research-ops/t12_session_cart"
+version = "1.0.0"
+description = "Session shopping cart totals"
+authors = [{ name = "Research Ops", email = "research-ops@mercor.com" }]
+keywords = ["python", "synthetic", "task-validator-challenge"]
+
+[metadata]
+difficulty = "easy"
+category = "programming"
+created = "2026-08-17"
+required_output_files = ["cart.py"]
+
+[verifier]
+timeout_sec = 120.0
+
+[agent]
+timeout_sec = 600.0
+
+[environment]
+build_timeout_sec = 600.0
+os = "linux"
+cpus = 1
+memory_mb = 2048

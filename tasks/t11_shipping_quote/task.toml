@@ -1,0 +1,26 @@
+schema_version = "1.4"
+
+[task]
+name = "research-ops/t11_shipping_quote"
+version = "1.0.0"
+description = "Parcel shipping quote"
+authors = [{ name = "Research Ops", email = "research-ops@mercor.com" }]
+keywords = ["python", "synthetic", "task-validator-challenge"]
+
+[metadata]
+difficulty = "easy"
+category = "programming"
+created = "2026-08-17"
+required_output_files = ["shipping.py"]
+
+[verifier]
+timeout_sec = 120.0
+
+[agent]
+timeout_sec = 600.0
+
+[environment]
+build_timeout_sec = 600.0
+os = "linux"
+cpus = 1
+memory_mb = 2048

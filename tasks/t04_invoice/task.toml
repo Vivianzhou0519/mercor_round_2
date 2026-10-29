@@ -1,0 +1,26 @@
+schema_version = "1.4"
+
+[task]
+name = "research-ops/t04_invoice"
+version = "1.0.0"
+description = "Half-up rounding for invoices"
+authors = [{ name = "Research Ops", email = "research-ops@mercor.com" }]
+keywords = ["python", "synthetic", "task-validator-challenge"]
+
+[metadata]
+difficulty = "medium"
+category = "programming"
+created = "2026-07-09"
+required_output_files = ["invoice.py"]
+
+[verifier]
+timeout_sec = 120.0
+
+[agent]
+timeout_sec = 600.0
+
+[environment]
+build_timeout_sec = 600.0
+os = "linux"
+cpus = 1
+memory_mb = 2048

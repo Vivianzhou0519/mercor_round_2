@@ -1,0 +1,7 @@
+# Required.
+pytest>=7.0
+
+# Optional: only needed to run tasks in real Docker containers via the Harbor CLI
+# (`harbor run -p tasks/t01_word_wrap -a oracle`). The provided harness does not
+# need it.
+harbor==0.21.0

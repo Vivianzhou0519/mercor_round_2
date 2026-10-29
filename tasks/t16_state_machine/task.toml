@@ -1,0 +1,26 @@
+schema_version = "1.4"
+
+[task]
+name = "research-ops/t16_state_machine"
+version = "1.0.0"
+description = "Tokenise an arithmetic expression"
+authors = [{ name = "Research Ops", email = "research-ops@mercor.com" }]
+keywords = ["python", "synthetic", "task-validator-challenge"]
+
+[metadata]
+difficulty = "medium"
+category = "programming"
+created = "2026-08-18"
+required_output_files = ["lexer.py"]
+
+[verifier]
+timeout_sec = 120.0
+
+[agent]
+timeout_sec = 600.0
+
+[environment]
+build_timeout_sec = 600.0
+os = "linux"
+cpus = 1
+memory_mb = 2048
