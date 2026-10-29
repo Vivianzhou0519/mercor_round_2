@@ -1,0 +1,10 @@
+{
+  "_comment": "Checks each fixture must trip. Every other check must be PASS or SKIPPED, except the ones listed in _inherited (real properties of t01 that every copy carries) and duplicates (all fixtures are copies of t01).",
+  "_inherited": {"mutation": "WARN", "verifier_isolation": "WARN"},
+  "f1_good": {},
+  "f2_nop_passes": {"nop": "FAIL", "oracle_hygiene": "WARN"},
+  "f3_oracle_fails": {"oracle": "FAIL"},
+  "f4_flaky": {"oracle": ["PASS", "FAIL"], "flaky": "FAIL"},
+  "f5_leak": {"env_leak": "FAIL"},
+  "f6_hackable": {"cheat": "FAIL"}
+}
