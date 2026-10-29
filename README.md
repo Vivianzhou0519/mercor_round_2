@@ -157,3 +157,8 @@ the exact action, full stdout/stderr and score of every run. Write-up: `results/
 6. **Severity call:** a `required_output_files` mismatch was FAIL; it's a metadata error, so now WARN.
 7. **A fixture expectation of mine** assumed the random test would fail the oracle; it passed 3/3 by chance
    (1 in 8). The flaky check still caught it; the fixture now allows either oracle result.
+8. **LLM solver couldn't create new files.** It was limited to starter files, so t08's required new `spec.py` was
+   dropped and the tests failed to import it (false WARN). It may now also write `required_output_files`.
+9. **Noise on a random task.** `test_order` and `timezone` each run once, so t06's random test made them WARN by
+   chance. They now skip when `flaky` fails ("meaningless on random tests").
+

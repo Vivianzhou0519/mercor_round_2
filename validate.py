@@ -73,8 +73,14 @@ def validate_task(task, out: Path, args) -> list[CheckResult]:
         else:
             res.append(run_check(f, ctx))
 
-    for f in C.TIER2_EXTRA:  # need the oracle's files
-        res.append(skip(f, 2, "blocked: no solution/solve.sh") if (blocked or not has_oracle) else run_check(f, ctx))
+    flaky = next((r for r in res if r.name == "flaky"), None)
+    for f in C.TIER2_EXTRA:  # need the oracle's files; meaningless on a task whose tests are already random
+        if blocked or not has_oracle:
+            res.append(skip(f, 2, "blocked: no solution/solve.sh"))
+        elif flaky and flaky.status != "PASS":
+            res.append(skip(f, 2, f"blocked by flaky {flaky.status}: random tests make order/time-zone comparisons meaningless"))
+        else:
+            res.append(run_check(f, ctx))
 
     if args.llm:  # reading-only LLM check: useful even for broken tasks (it can explain an oracle failure)
         res.append(run_check(C.check_llm_spec_tests, ctx))

@@ -1,14 +1,15 @@
 # Task quality report: 20 Harbor coding tasks
 
-**Result:** 7 tasks VALID, 6 need human REVIEW, 7 INVALID. Plus one dataset-wide verifier hole that affects all
-20 tasks and should be fixed once in the shared template. Evidence for every verdict is in
-`results/final-code/` (open `report.html`); the run left `tasks/` byte-for-byte unchanged (hash checked).
+**Result:** 6 tasks VALID, 7 need human REVIEW, 7 INVALID. Plus one dataset-wide verifier hole that affects all
+20 tasks and should be fixed once in the shared template. Final run: `python validate.py tasks --llm` →
+`results/final-llm/` (open `report.html`): every code check plus the LLM checks. The run left `tasks/`
+byte-for-byte unchanged (hash checked).
 
 | Verdict | Tasks |
 |---|---|
 | INVALID (7) | t02 t03 t04 t06 t07 t09 t16 |
-| REVIEW (6) | t05 t10 t12 t13 t15 t19 |
-| VALID (7) | t01 t08 t11 t14 t17 t18 t20 |
+| REVIEW (7) | t05 t10 t12 t13 t14 t15 t19 |
+| VALID (6) | t01 t08 t11 t17 t18 t20 |
 
 ## 1. How the checks are designed
 
@@ -46,7 +47,7 @@ copy passes and each broken copy trips only its own check.
 
 ## 2. Findings
 
-| Task | Verdict | Problem | Evidence (`results/final-code/…`) |
+| Task | Verdict | Problem | Evidence (`results/final-llm/…`) |
 |---|---|---|---|
 | t02_slug | INVALID | Doing nothing scores 1 in 3/3 runs: the starter already passes every test | `t02_slug/nop/` |
 | t03_backoff | INVALID | Reference solution scores 0 in 3/3 runs; fails `test_zero_base_disables_backoff` | `t03_backoff/oracle/` |
@@ -59,10 +60,13 @@ copy passes and each broken copy trips only its own check.
 | t10_wordwrap_columns | REVIEW | Instruction 96% similar to t01_word_wrap | `t10_wordwrap_columns/duplicates/` |
 | t12_session_cart | REVIEW | 4 tests fail when the suite runs in reverse: they share a module-level cart | `t12_session_cart/test_order/runs/reversed-order/` |
 | t13_billing_period | REVIEW | 4 tests pass in UTC and fail in Pacific/Auckland; also, deleting the backwards-range guard still passes (the same-day backwards case of rule 4 is untested) | `t13_billing_period/timezone/`, `mutation/` |
+| t14_retry_policy | REVIEW | **Found only by the LLM checks.** The instruction says delays are in seconds; the tests expect milliseconds (`next_delay(1, 503) == 500`, `Retry-After "12"` → `12000`). An independent solution written from the instruction fails | `t14_retry_policy/llm_spec_tests/llm-call.json`, `llm_independent_solve/` |
 | t15_matrix_report | REVIEW | The instruction contains a line of the solution (`STATS = {"reports": 0, "cells": 0}`) | `t15_matrix_report/env_leak/` |
 | t19_atomic_write | REVIEW | The instruction contains a line of the solution (`os.replace(temp, target)`) | `t19_atomic_write/env_leak/` |
 
-The 7 VALID tasks passed every check, including all mutants, stubs and cheats (except the dataset-wide hole below).
+The 6 VALID tasks passed every check, including mutants, stubs, cheats and the LLM checks (except the
+dataset-wide hole below). The LLM spec-vs-tests check also flagged most INVALID/REVIEW tasks (e.g. t03, t16:
+it points at the requirement the failing test disagrees with), which helps the author decide which side to fix.
 
 ## 3. Dataset-wide finding: the verifier can be gamed on every task
 
@@ -94,6 +98,7 @@ local harness may differ on the logs mount.
 | t10 | Drop it, or make it clearly different from t01 (different skill, not a re-skin). |
 | t12 | Reset the module-level cart in a fixture so each test sets up its own state. |
 | t13 | State "all timestamps are UTC" in the instruction and make the solution/tests use UTC explicitly; add a same-day backwards-range test. |
+| t14 | Make the instruction and tests agree on units (state milliseconds, or change the tests to seconds); resubmit. |
 | t15, t19 | Human review of the instruction wording: is the quoted line legitimate spec or a giveaway? Rephrase if it gives the fix away. |
 | t05 | Add an odd-length median test and tests for each requirement (it has one test function). |
 
@@ -110,6 +115,9 @@ passes. Fix the dataset-wide verifier hole in the template before shipping any t
   an equivalence filter.
 - An integrity alarm came from macOS `.DS_Store` files, not the validator.
 - LLM rate limits (429) were throttled and retried.
+- The LLM solver was only allowed to edit starter files, so on t08 (which asks for a *new* `spec.py`) its file
+  was dropped: a false WARN. It may now also create the declared output files.
+- Order/time-zone checks on a task with random tests (t06) reported noise; they now skip when `flaky` fails.
 
 Each was found by checking results against fixtures or reading the evidence, not by trusting the first run.
 
@@ -120,7 +128,7 @@ Each was found by checking results against fixtures or reading the evidence, not
   measure the grader's real false-pass and false-fail rates. My probes only estimate them.
 - **Difficulty calibration.** Model pass rates per task: tasks every model solves add little; tasks none solve need a
   solvability check.
-- **LLM checks on every task by default** (spec vs tests, independent solve, hard-coded fake fix). They're built and
-  ran on all 20 (`results/tasks-llm-run-2/`), but are opinions, so they only WARN.
+- **Calibrate the LLM checks.** They ran on all 20 and caught t14, which no code check found, but they are opinions
+  (WARN only): measure their false-alarm rate against human labels before trusting them at scale.
 - **Stronger mutation and property-based tests** (boundary flips, constants, hypothesis-generated inputs), and
   semantic duplicate detection (embeddings) for large datasets.

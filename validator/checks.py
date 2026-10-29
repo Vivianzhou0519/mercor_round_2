@@ -331,7 +331,8 @@ def _llm_solution(ctx: Ctx, check: str, system: str):
     ctx.ev.save_llm(check, rec)
     if data is None:
         return None, rec.get("error", "no response")
-    allowed = set(ctx.task.starter_files)
+    # the agent may change starter files AND create the files the task declares (e.g. t08's new spec.py)
+    allowed = set(ctx.task.starter_files) | set(ctx.task.meta.get("required_output_files", []))
     files = {f["path"]: f["content"] for f in data.get("files", []) if f["path"] in allowed}
     if not files:
         return None, "LLM returned no usable files"
