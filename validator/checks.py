@@ -405,3 +405,115 @@ TIER1 = [check_structure, check_env_leak, check_dockerfile_parity, check_oracle_
 TIER2 = [check_nop, check_oracle, check_flaky]
 TIER3 = [check_stub, check_mutation, check_cheat, check_verifier_isolation]
 TIER3_LLM = [check_llm_spec_tests, check_llm_independent_solve, check_llm_fake_fix]
+
+
+# ----------------------------------------------------------------------------- added checks
+
+
+def _test_sources(ctx) -> dict[str, str]:
+    return {p.name: p.read_text() for p in (ctx.task.dir / "tests").glob("*.py")}
+
+
+def check_spec_coverage(ctx: Ctx) -> CheckResult:
+    """SPEC COVERAGE: do the tests use names the agent was never told about?
+    WHY:  if a test imports `format_money` or passes `currency=` and neither the instruction nor the starter
+          mentions it, no agent can know to write it: the task is unsolvable as specified.
+    HOW:  read tests/*.py with `ast`: names imported from the starter's modules, attributes used on those
+          modules, and keyword arguments passed to them. Each must appear in instruction.md or the starter files.
+    FAIL: some are in neither (the agent can't see them anywhere)."""
+    import ast as _ast
+    t = ctx.task
+    modules = {p.rsplit("/", 1)[-1].removesuffix(".py") for p in t.starter_files if p.endswith(".py")}
+    visible = t.instruction + "\n" + "\n".join(t.starter_files.values())
+    used: dict[str, str] = {}
+    for fname, src in _test_sources(ctx).items():
+        try:
+            tree = _ast.parse(src)
+        except SyntaxError:
+            continue
+        api = set()  # names that refer to the task's own code
+        for node in _ast.walk(tree):
+            if isinstance(node, _ast.ImportFrom) and node.module in modules:
+                for a in node.names:
+                    used.setdefault(a.name, f"{fname}: imported from {node.module}")
+                    api.add(a.asname or a.name)
+            elif isinstance(node, _ast.Import):
+                api.update(a.asname or a.name for a in node.names if a.name in modules)
+        for node in _ast.walk(tree):
+            if isinstance(node, _ast.Attribute) and isinstance(node.value, _ast.Name) and node.value.id in api \
+                    and node.value.id in modules:
+                used.setdefault(node.attr, f"{fname}: {node.value.id}.{node.attr}")
+            if isinstance(node, _ast.Call):
+                f = node.func
+                callee = f.id if isinstance(f, _ast.Name) else f.attr if isinstance(f, _ast.Attribute) else ""
+                base = f.value.id if isinstance(f, _ast.Attribute) and isinstance(f.value, _ast.Name) else ""
+                if callee in api or base in api:
+                    for kw in node.keywords:
+                        if kw.arg:
+                            used.setdefault(f"{kw.arg}=", f"{fname}: keyword {kw.arg}= in a call to {callee}")
+    missing = [f"{n} ({where})" for n, where in sorted(used.items())
+               if not re.search(rf"(?<!\w){re.escape(n.rstrip('='))}(?!\w)", visible)]
+    if missing:
+        return _r("spec_coverage", 1, "FAIL", f"tests require {len(missing)} name(s) that appear in neither "
+                  "instruction.md nor the starter files", "document these functions/arguments in instruction.md "
+                  "(or add them to the starter)", missing)
+    return _r("spec_coverage", 1, "PASS", f"all {len(used)} names the tests use are visible to the agent")
+
+
+def check_thin_tests(ctx: Ctx) -> CheckResult:
+    """THIN TESTS: are there enough tests to mean anything?
+    WHY:  one or two test functions can't cover an instruction's requirements; a model gets rewarded for
+          satisfying a few examples.
+    HOW:  count `def test_*` functions in tests/ (module level and in classes).
+    WARN: fewer than 3."""
+    n = sum(len(re.findall(r"^\s*def test_\w+", s, re.MULTILINE)) for s in _test_sources(ctx).values())
+    if n < 3:
+        return _r("thin_tests", 1, "WARN", f"only {n} test function(s)", "add tests for each requirement in the "
+                  "instruction (edge cases, error paths)")
+    return _r("thin_tests", 1, "PASS", f"{n} test functions")
+
+
+def check_test_order(ctx: Ctx) -> CheckResult:
+    """TEST ORDER: does each test pass on its own, and in reverse order?
+    WHY:  tests that share state (a module-level cart, a cache) pass or fail depending on what ran before,
+          so a correct answer can be scored 0 when the order changes.
+    HOW:  with the oracle's files: normal run, every test alone, and the suite reversed (direct pytest runs).
+    WARN: a test that passes normally fails alone or reversed."""
+    from . import direct
+    normal = direct.run_pytest(ctx, "test_order", "normal-order")
+    passing = [t for t, v in normal.items() if v == "passed"]
+    if not passing:
+        return _r("test_order", 2, "SKIPPED", "no test passes in the normal run, so order can't be judged")
+    bad = []
+    rev = direct.run_pytest(ctx, "test_order", "reversed-order", reverse=True)
+    bad += [f"{t} fails when the suite runs in reverse" for t in passing if rev.get(t) == "failed"]
+    for t in passing:
+        alone = direct.run_pytest(ctx, "test_order", f"alone-{t.split('::')[-1]}", select=[t])
+        if alone.get(t) == "failed":
+            bad.append(f"{t} fails when run alone")
+    if bad:
+        return _r("test_order", 2, "WARN", "tests share state / depend on order", "make every test set up its own "
+                  "state (fixtures, reset module-level globals)", bad)
+    return _r("test_order", 2, "PASS", f"all {len(passing)} tests pass alone and in reverse order")
+
+
+def check_timezone(ctx: Ctx) -> CheckResult:
+    """TIMEZONE: does the result depend on the machine's time zone?
+    WHY:  graders run on machines in different zones; a test that passes in UTC and fails in Auckland gives
+          different scores to the same answer.
+    HOW:  run the oracle's files + tests with TZ=UTC and TZ=Pacific/Auckland (direct pytest; the harness drops TZ).
+    WARN: per-test results differ."""
+    from . import direct
+    utc = direct.run_pytest(ctx, "timezone", "tz-utc", tz="UTC")
+    akl = direct.run_pytest(ctx, "timezone", "tz-pacific-auckland", tz="Pacific/Auckland")
+    diff = [f"{t}: UTC {utc.get(t)} vs Pacific/Auckland {akl.get(t)}" for t in sorted(set(utc) | set(akl))
+            if utc.get(t) != akl.get(t)]
+    if diff:
+        return _r("timezone", 2, "WARN", "time-zone dependent; specify UTC", "state the time zone in the instruction "
+                  "and make the tests/solution use UTC explicitly", diff)
+    return _r("timezone", 2, "PASS", f"same results for {len(utc)} tests in UTC and Pacific/Auckland")
+
+
+TIER1 = [check_structure, check_env_leak, check_dockerfile_parity, check_oracle_hygiene, check_spec_coverage,
+         check_thin_tests]
+TIER2_EXTRA = [check_test_order, check_timezone]

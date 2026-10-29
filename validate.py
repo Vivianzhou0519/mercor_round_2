@@ -30,7 +30,8 @@ SIMILAR = 0.85
 def tree_hash(root: Path) -> str:
     h = hashlib.sha256()
     for p in sorted(root.rglob("*")):
-        if p.is_file() and "__pycache__" not in p.parts:
+        # ignore OS metadata (Finder writes .DS_Store when a folder is opened); everything else counts
+        if p.is_file() and "__pycache__" not in p.parts and p.name != ".DS_Store":
             h.update(str(p.relative_to(root)).encode() + p.read_bytes())
     return h.hexdigest()
 
@@ -71,6 +72,9 @@ def validate_task(task, out: Path, args) -> list[CheckResult]:
             res.append(skip(f, 2, "blocked: no solution/solve.sh"))
         else:
             res.append(run_check(f, ctx))
+
+    for f in C.TIER2_EXTRA:  # need the oracle's files
+        res.append(skip(f, 2, "blocked: no solution/solve.sh") if (blocked or not has_oracle) else run_check(f, ctx))
 
     if args.llm:  # reading-only LLM check: useful even for broken tasks (it can explain an oracle failure)
         res.append(run_check(C.check_llm_spec_tests, ctx))

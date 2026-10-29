@@ -6,14 +6,42 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 
 MODEL = "anthropic/claude-sonnet-5.5"
 
 
+_lock = threading.Lock()
+_last = [0.0]
+MIN_INTERVAL = 3.2  # OpenRouter caps new accounts at 20 requests/minute for this model
+
+
+def _throttle() -> None:
+    """Space calls out across all threads so we stay under the rate limit."""
+    with _lock:
+        wait = _last[0] + MIN_INTERVAL - time.time()
+        if wait > 0:
+            time.sleep(wait)
+        _last[0] = time.time()
+
+
 def ask_json(system: str, prompt: str, schema: dict) -> tuple[dict | None, dict]:
-    """One structured-output call. Returns (parsed JSON or None, full record of the call for the evidence)."""
-    rec = {"model": MODEL, "system": system, "prompt": prompt, "schema": schema}
+    """One structured-output call (rate-limited; a 429 is retried after a pause).
+    Returns (parsed JSON or None, full record of the call for the evidence)."""
+    rec = {"model": MODEL, "system": system, "prompt": prompt, "schema": schema, "attempts": 0}
+    for attempt in range(4):
+        rec["attempts"] = attempt + 1
+        data, rec = _ask_once(system, prompt, schema, rec)
+        if data is not None or "429" not in rec.get("error", ""):
+            return data, rec
+        time.sleep(15 * (attempt + 1))
+    return None, rec
+
+
+def _ask_once(system: str, prompt: str, schema: dict, rec: dict) -> tuple[dict | None, dict]:
+    _throttle()
+    rec = {k: v for k, v in rec.items() if k not in ("error",)}
     t0 = time.time()
     try:
         import anthropic
